@@ -61,8 +61,8 @@ class BenchMark
 			$sge_cmd .= "#Parameter\t" . json_encode($cmd_para) . "\n";
 			$sge_cmd .= "#cmd\t" . $this->cmds[$cmd_idx]."\n";
 			
-			$sge_cmd .= "echo 'start\t'`date +%T.%3N`\n";
 			$sge_cmd .= "echo '#parameter\t".json_encode($cmd_para)."' \n";
+			$sge_cmd .= "echo 'start\t'`date +%T.%3N`\n";
 			$sge_cmd .= "cd $tmp_dir\n";
 			$sge_cmd .= $this->cmds[$cmd_idx]."\n";
 			$sge_cmd .= "rm -r $tmp_dir\n";
@@ -122,7 +122,7 @@ $p_index = "/home/andy/andy/pokemon_0505/sbwt_test3/sbwt/index";
 $p_log = "/home/andy/andy/pokemon_0505/sbwt_test3/sbwt/log";
 $p_result = "/home/andy/andy/pokemon_0505/sbwt_test3/sbwt/result";
 
-
+/*
 $bb = new BenchMark();
 $bb->base_cpu = 6;
 $bb->add_parameter("repeat", array(1) );
@@ -132,14 +132,14 @@ $cmd = "time $p_sbwt build -p $p_index/hg19_\$genomeX_test_400M_\$interval_\$rep
 $cmd .= "$p_log/log_build_r_\$repeat_g_\$genome_i_\$interval.log 2>&1";
 $bb->sge_run($cmd);
 exit();
-
+*/
 
 $bm = new BenchMark();
-$bm->base_cpu = 4;
-$bm->add_parameter("repeat", array(1) );
-$bm->add_parameter("genome", array(1) );
-$bm->add_parameter("len", array(100) );
-$bm->add_parameter("cpu", array(8) );
+$bm->base_cpu = 6;
+$bm->add_parameter("repeat", array(1,2,3,4,5) );
+$bm->add_parameter("genome", array(1,2,4,8,16) );
+$bm->add_parameter("len", array(40,60,80,100) );
+$bm->add_parameter("cpu", array(1) );
 $bm->add_parameter("interval", array(64) );
 
 $cmd = "time $p_sbwt map -p $p_index/hg19_\$genomeX_test_400M_\$interval -i $p_reads/s_hg19_400M_reads_\$len.fq -n \$cpu -o ";
