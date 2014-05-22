@@ -57,7 +57,9 @@ class BenchMarkRun
 {
 	//variable
 	var $project_name = "";
+	var $project_record = "";
 	var $c_cmds = NULL; //current cmds obj
+	var $records = array();
 	
 	//config
 	var $log_path = "logs";
@@ -67,7 +69,9 @@ class BenchMarkRun
 	var $base_cpu = 6;
 	var $sge_path = "tmp_sge";
 	var $default_sge_cmd = "#!/bin/sh\n#$ -V\n#$ -S /bin/bash\n";
-
+	
+	//sh run
+	var $sh_path = "tmp_sh";
 	
 	function get_basic_running_script(&$cmd_para)
 	{
@@ -76,11 +80,11 @@ class BenchMarkRun
 		
 		$script = "echo '#project\t{$this->project_name}' \n";
 		$script .= "echo '#parameter\t".json_encode($cmd_para)."' \n";
-		$script .= "echo '#start\t'`date +%T.%3N`\n";
+		$script .= "echo '#start\t'`date +%s.%3N`\n";
 		$script .= "cd $tmp_dir\n";
 		$script .= $this->c_cmds->cmds[$cmd_para["cmd_idx"]]."\n";
 		$script .= "rm -r $tmp_dir\n";
-		$script .= "echo '#end\t'`date +%T.%3N`\n";
+		$script .= "echo '#end\t'`date +%s.%3N`\n";
 		
 		return $script;
 	}
@@ -88,20 +92,6 @@ class BenchMarkRun
 	{
 		$path = dirname(__FILE__)."/{$this->log_path}/log_". $cmd_para["cmd_md5"] .".log";
 		return $path;
-	}
-	
-	function default_run()
-	{
-		foreach($this->c_cmds->cmds_paras as $cmd_para)
-		{
-			$cmd_idx = $cmd_para["cmd_idx"];
-			$start_time =  microtime(true);
-			echo $this->c_cmds->cmds[$cmd_idx]."\n";
-			//shell_exec($this->cmds[$cmd_idx]);
-			$end_time =  microtime(true);
-			$log = number_format(($end_time - $start_time), 3, '.', '') . "\t" . json_encode($cmd_para) . "\n";
-			file_put_contents($this->log_file, $log, FILE_APPEND);
-		}
 	}
 	
 	function get_sge_script_header(&$cmd_para)
@@ -119,12 +109,29 @@ class BenchMarkRun
 		$sge_cmd .= "#cmd\t" . $this->c_cmds->cmds[$cmd_para["cmd_idx"]]."\n";
 		return $sge_cmd;
 	}
+	
+	function default_run()
+	{
+		@mkdir($this->sh_path);
+		foreach($this->c_cmds->cmds_paras as $cmd_para)
+		{
+			$this->record_run($cmd_para, "sh");
+			$sh_cmd = $this->get_basic_running_script($cmd_para);
+			$log_path = $this->get_log_path($cmd_para);
+			
+			file_put_contents($this->sh_path."/sh_".$cmd_para["cmd_md5"].".sh" , $sh_cmd);
+			echo $this->c_cmds->cmds[$cmd_para["cmd_idx"]]."\n";
+			//echo shell_exec("sh ".$this->sh_path."/sh_".$cmd_para["cmd_md5"].".sh >$log_path 2>&1");
+			echo "\n";
+		}
+	}
 	function sge_run()
 	{
 		@mkdir($this->sge_path);
 		
 		foreach($this->c_cmds->cmds_paras as $cmd_para)
 		{
+			$this->record_run($cmd_para, "sge");
 			$sge_cmd = $this->get_sge_script_header($cmd_para);
 			$sge_cmd .= $this->get_basic_running_script($cmd_para);
 			
@@ -133,6 +140,130 @@ class BenchMarkRun
 			echo shell_exec("qsub ".$this->sge_path."/sge_".$cmd_para["cmd_md5"].".sge");
 			echo "\n";
 		}
+	}
+	
+	
+	
+	// Record
+	function check_record()
+	{
+		if( !file_exists($this->project_record) )
+		{
+			file_put_contents($this->project_record, "#project {$this->project_name}\n");
+		}
+	}
+	function record_run(&$cmd_para, $type="default")
+	{
+		$record = "#Parameter\t$type\t" . json_encode($cmd_para) . "\n";
+		file_put_contents($this->project_record, $record, FILE_APPEND);
+	}
+	
+	
+	//get log result and calculate time
+	function print_average_time($merge_key = array())
+	{
+		$this->read_record();
+		$this->read_result_time();
+		$this->calculate_average_time($merge_key);
+	}
+	
+	function read_record()
+	{
+		//$this->records;
+		$lines = File($this->project_record);
+		foreach($lines as $line)
+		{
+			if($line[0] != "#")
+				continue;
+			if(substr($line, 0, 10) == "#Parameter")
+			{
+				$tabs = explode("\t", $line);
+				$this->records[ $tabs[1] ][] = json_decode($tabs[2], true);
+			}
+		}
+		
+	}
+	function read_result_time()
+	{
+		foreach($this->records as $type => &$paras)
+		{
+			foreach($paras as &$para)
+			{
+				$file = $this->log_path . "/log_" . $para["cmd_md5"] . ".log";
+				$para["run_time"] = $this->get_time($file);
+			}
+		}
+		//print_r($this->records);
+	}
+	function get_time($file)
+	{
+		if(!file_exists($file))
+		{
+			echo "Error. File not exists $file\n";
+			return 0;
+		}
+		$start = 0.0;
+		$end = 0.0;
+		
+		$fp = fopen($file, "r");
+		while(!feof($fp))
+		{
+			$line = trim(fgets($fp));
+			if($line == "")
+				continue;
+			$tabs = explode("\t", $line);
+			if($tabs[0] == "#start")
+				$start = $tabs[1];
+			if($tabs[0] == "#end")
+				$end = $tabs[1];
+		}
+		fclose($fp);
+		if($end < $start)
+		{
+			echo "Error. time record error, or jobs not finish\n";
+			return 0;
+		}
+		//echo ($end - $start) . "\n";
+		return $end - $start;
+	}
+	function calculate_average_time(&$merge_key)
+	{
+		//"cmd_idx" "cmd_md5" "run_time"
+		$average_time = array();
+		foreach($this->records as $type => &$paras)
+		{
+			foreach($paras as &$para)
+			{
+				$time_key = "";
+				foreach($merge_key as $mkey)
+				{
+					$time_key .= "(" . $mkey .":". $para[$mkey].")";
+				}
+				if(!isset($average_time[$time_key]))
+					$average_time[$time_key] = array("num"=>0, "sum"=>0, "avg"=>0, "sd"=>0, "each"=>array());
+				$average_time[$time_key]["num"] ++;
+				$average_time[$time_key]["sum"] += $para["run_time"];
+				$average_time[$time_key]["each"][] = $para["run_time"];
+			}
+		}
+		// average
+		foreach($average_time as $key => &$counts)
+		{
+			$counts["avg"] = $counts["sum"] / $counts["num"];
+		}
+		
+		//sd
+		foreach($average_time as $key => &$counts)
+		{
+			$t = 0;
+			foreach($counts["each"] as $each)
+			{
+				$t += pow($each - $counts["avg"], 2);
+			}
+			$counts["sd"] = sqrt( $t / ($counts["num"]-1) );
+		}
+		
+		print_r($average_time);
 	}
 };
 
@@ -156,6 +287,8 @@ class BenchMark extends BenchMarkRun
 	function select_project($prj_name)
 	{
 		$this->project_name = $prj_name;
+		$this->project_record = urlencode($prj_name).".bm";
+		$this->check_record();
 		if(!isset($this->BM_cmds[$prj_name]))
 		{
 			$this->BM_cmds[$prj_name] = new BenchMarkCmd();
@@ -193,10 +326,14 @@ $p_log = "/home/andy/andy/pokemon_0505/sbwt_test3/sbwt/log";
 $p_result = "/home/andy/andy/pokemon_0505/sbwt_test3/sbwt/result";
 
 
-$bb = new BenchMark("aa");
+//$bb = new BenchMark("sbwt_speed_test_build");
+//$bb->print_average_time(array("genome", "interval"));
+//exit();
+
+$bb = new BenchMark("sbwt_speed_test_build");
 $bb->base_cpu = 6;
-$bb->add_parameter("repeat", array(1) );
-$bb->add_parameter("genome", array(1,2,4,8,16) );
+$bb->add_parameter("repeat", array(3,4,5) );
+$bb->add_parameter("genome", array(1,2) );
 $bb->add_parameter("interval", array(64) );
 $cmd = "time $p_sbwt build -p $p_index/hg19_\$genomeX_test_400M_\$interval_\$repeat -i $p_genome/hg19_\$genomeX_test_400M.fa -s \$interval -f > ";
 $cmd .= "$p_log/log_build_r_\$repeat_g_\$genome_i_\$interval.log 2>&1";
@@ -204,7 +341,7 @@ $bb->run($cmd, "sge");
 exit();
 
 exit();
-$bm = new BenchMark();
+$bm = new BenchMark("sbwt_speed_test_search");
 $bm->base_cpu = 6;
 $bm->add_parameter("repeat", array(1,2,3,4,5) );
 $bm->add_parameter("genome", array(1,2,4,8,16) );
