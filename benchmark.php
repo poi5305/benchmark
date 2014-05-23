@@ -142,8 +142,6 @@ class BenchMarkRun
 		}
 	}
 	
-	
-	
 	// Record
 	function check_record()
 	{
@@ -164,7 +162,23 @@ class BenchMarkRun
 	{
 		$this->read_record();
 		$this->read_result_time();
-		$this->calculate_average_time($merge_key);
+		$average_time = $this->calculate_average_time($merge_key);
+		
+		$output = "key_name\tnum\tsum\tavg\tsd\tdetail\n";
+		foreach($average_time as $key => $counts)
+		{
+			$output .= $key . "\t";
+			$output .= $counts["num"] . "\t";
+			$output .= number_format($counts["sum"], 3, '.', '') . "\t";
+			$output .= number_format($counts["avg"], 3, '.', '') . "\t";
+			$output .= number_format($counts["sd"], 3, '.', '') . "\t";
+			foreach($counts["each"] as $time)
+			{
+				$output .= number_format($time, 3, '.', '') . ", ";
+			}
+			$output .= "\n";
+		}
+		echo $output;
 	}
 	
 	function read_record()
@@ -220,7 +234,7 @@ class BenchMarkRun
 		fclose($fp);
 		if($end < $start)
 		{
-			echo "Error. time record error, or jobs not finish\n";
+			echo "Error. time record error, or jobs not finish [$file]\n";
 			return 0;
 		}
 		//echo ($end - $start) . "\n";
@@ -263,7 +277,7 @@ class BenchMarkRun
 			$counts["sd"] = sqrt( $t / ($counts["num"]-1) );
 		}
 		
-		print_r($average_time);
+		return $average_time;
 	}
 };
 
@@ -325,19 +339,19 @@ $p_index = "/home/andy/andy/pokemon_0505/sbwt_test3/sbwt/index";
 $p_log = "/home/andy/andy/pokemon_0505/sbwt_test3/sbwt/log";
 $p_result = "/home/andy/andy/pokemon_0505/sbwt_test3/sbwt/result";
 
-
-//$bb = new BenchMark("sbwt_speed_test_build");
-//$bb->print_average_time(array("genome", "interval"));
-//exit();
-
+/*
 $bb = new BenchMark("sbwt_speed_test_build");
-$bb->base_cpu = 6;
-$bb->add_parameter("repeat", array(3,4,5) );
+$bb->base_cpu = 8;
+$bb->add_parameter("repeat", array(1,2,3,4,5) );
 $bb->add_parameter("genome", array(1,2) );
 $bb->add_parameter("interval", array(64) );
 $cmd = "time $p_sbwt build -p $p_index/hg19_\$genomeX_test_400M_\$interval_\$repeat -i $p_genome/hg19_\$genomeX_test_400M.fa -s \$interval -f > ";
 $cmd .= "$p_log/log_build_r_\$repeat_g_\$genome_i_\$interval.log 2>&1";
 $bb->run($cmd, "sge");
+exit();
+*/
+$bb = new BenchMark("sbwt_speed_test_build");
+$bb->print_average_time(array("genome", "interval"));
 exit();
 
 exit();
@@ -349,7 +363,7 @@ $bm->add_parameter("len", array(40,60,80,100) );
 $bm->add_parameter("cpu", array(1) );
 $bm->add_parameter("interval", array(64) );
 
-$cmd = "time $p_sbwt map -p $p_index/hg19_\$genomeX_test_400M_\$interval -i $p_reads/s_hg19_400M_reads_\$len.fq -n \$cpu -o ";
+$cmd = "time $p_sbwt map -p $p_index/hg19_\$genomeX_test_400M_\$interval_\$repeat -i $p_reads/s_hg19_400M_reads_\$len.fq -n \$cpu -o ";
 $cmd .= "$p_result/result_r_\$repeat_g_\$genome_l_\$len_c_\$cpu_\$interval.sam > ";
 $cmd .= "$p_log/log_search_r_\$repeat_g_\$genome_l_\$len_c_\$cpu_\$interval.log 2>&1";
 $bm->sge_run($cmd);
