@@ -68,10 +68,18 @@ class BenchMarkRun
 	//sge run
 	var $base_cpu = 6;
 	var $sge_path = "tmp_sge";
+	//var $default_sge_cmd = "#!/bin/sh\n#$ -V\n#$ -S /bin/bash\n#$ -l h=SGE07\n";
 	var $default_sge_cmd = "#!/bin/sh\n#$ -V\n#$ -S /bin/bash\n";
+	var $limit_hosts = array();
+	var $limit_host_idx = 0;
 	
 	//sh run
 	var $sh_path = "tmp_sh";
+	
+	function set_sge_hosts($hosts)
+	{
+		$this->limit_hosts = $hosts;
+	}
 	
 	function get_basic_running_script(&$cmd_para)
 	{
@@ -105,11 +113,18 @@ class BenchMarkRun
 			$sge_cmd .= "#$ -pe single {$this->base_cpu}\n";
 		$sge_cmd .= "#$ -o ".$this->get_log_path($cmd_para)."\n";
 		$sge_cmd .= "#$ -j y\n";
+		
+		$host_count = count($this->limit_hosts);
+		if($host_count != 0)
+		{
+			$host = $this->limit_hosts[ ($this->limit_host_idx % $host_count) ];
+			$sge_cmd .= "#$ -l h=$host\n";
+			$this->limit_host_idx++;
+		}
 		$sge_cmd .= "#Parameter\t" . json_encode($cmd_para) . "\n";
 		$sge_cmd .= "#cmd\t" . $this->c_cmds->cmds[$cmd_para["cmd_idx"]]."\n";
 		return $sge_cmd;
 	}
-	
 	function default_run()
 	{
 		@mkdir($this->sh_path);
@@ -121,7 +136,7 @@ class BenchMarkRun
 			
 			file_put_contents($this->sh_path."/sh_".$cmd_para["cmd_md5"].".sh" , $sh_cmd);
 			echo $this->c_cmds->cmds[$cmd_para["cmd_idx"]]."\n";
-			//echo shell_exec("sh ".$this->sh_path."/sh_".$cmd_para["cmd_md5"].".sh >$log_path 2>&1");
+			echo shell_exec("sh ".$this->sh_path."/sh_".$cmd_para["cmd_md5"].".sh >$log_path 2>&1");
 			echo "\n";
 		}
 	}
@@ -134,7 +149,6 @@ class BenchMarkRun
 			$this->record_run($cmd_para, "sge");
 			$sge_cmd = $this->get_sge_script_header($cmd_para);
 			$sge_cmd .= $this->get_basic_running_script($cmd_para);
-			
 			file_put_contents($this->sge_path."/sge_".$cmd_para["cmd_md5"].".sge" , $sge_cmd);
 			echo $this->c_cmds->cmds[$cmd_para["cmd_idx"]]."\n";
 			echo shell_exec("qsub ".$this->sge_path."/sge_".$cmd_para["cmd_md5"].".sge");
@@ -329,7 +343,6 @@ class BenchMark extends BenchMarkRun
 	
 };
 
-
 // example usage
 
 $p_sbwt = "/home/andy/publish/sBWT/bin/sbwt_linux";
@@ -339,24 +352,35 @@ $p_index = "/home/andy/andy/pokemon_0505/sbwt_test3/sbwt/index";
 $p_log = "/home/andy/andy/pokemon_0505/sbwt_test3/sbwt/log";
 $p_result = "/home/andy/andy/pokemon_0505/sbwt_test3/sbwt/result";
 
-/*
+
 $bb = new BenchMark("sbwt_speed_test_build");
-$bb->base_cpu = 8;
+$bb->base_cpu = 13;
+$bb->set_sge_hosts(array("SGE03","SGE04","SGE05","SGE06","SGE07"));
+$bb->add_parameter("genome", array(1,2,4,8,16) );
 $bb->add_parameter("repeat", array(1,2,3,4,5) );
-$bb->add_parameter("genome", array(1,2) );
 $bb->add_parameter("interval", array(64) );
 $cmd = "time $p_sbwt build -p $p_index/hg19_\$genomeX_test_400M_\$interval_\$repeat -i $p_genome/hg19_\$genomeX_test_400M.fa -s \$interval -f > ";
 $cmd .= "$p_log/log_build_r_\$repeat_g_\$genome_i_\$interval.log 2>&1";
 $bb->run($cmd, "sge");
 exit();
+
+
+/*
+key_name        num     sum     avg     sd      detail
+(genome:1)(interval:64) 5       11228.414       2245.683        93.639  2211.293, 2251.095, 2216.780, 2149.422, 2399.824, 
+(genome:2)(interval:64) 5       15081.735       3016.347        138.691 3013.301, 3062.862, 2943.526, 2845.235, 3216.811, 
+(genome:4)(interval:64) 5       17692.795       3538.559        73.397  3532.496, 3580.733, 3414.289, 3568.426, 3596.851, 
+(genome:8)(interval:64) 5       18446.089       3689.218        107.865 3748.501, 3728.157, 3515.812, 3661.187, 3792.432, 
+(genome:16)(interval:64)        5       15263.382       3052.676        119.804 3057.069, 3006.353, 2875.764, 3161.000, 3163.196,
 */
+/*
 $bb = new BenchMark("sbwt_speed_test_build");
 $bb->print_average_time(array("genome", "interval"));
 exit();
-
-exit();
+*/
+/*
 $bm = new BenchMark("sbwt_speed_test_search");
-$bm->base_cpu = 6;
+$bm->base_cpu = 16;
 $bm->add_parameter("repeat", array(1,2,3,4,5) );
 $bm->add_parameter("genome", array(1,2,4,8,16) );
 $bm->add_parameter("len", array(40,60,80,100) );
@@ -366,7 +390,11 @@ $bm->add_parameter("interval", array(64) );
 $cmd = "time $p_sbwt map -p $p_index/hg19_\$genomeX_test_400M_\$interval_\$repeat -i $p_reads/s_hg19_400M_reads_\$len.fq -n \$cpu -o ";
 $cmd .= "$p_result/result_r_\$repeat_g_\$genome_l_\$len_c_\$cpu_\$interval.sam > ";
 $cmd .= "$p_log/log_search_r_\$repeat_g_\$genome_l_\$len_c_\$cpu_\$interval.log 2>&1";
-$bm->sge_run($cmd);
+$bm->run($cmd, "sge");
+*/
+$bb = new BenchMark("sbwt_speed_test_search");
+$bb->print_average_time(array("genome", "len", "cpu","interval",));
+exit();
 
 
 ?>
